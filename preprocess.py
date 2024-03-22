@@ -3,6 +3,7 @@ import pandas
 import h5py
 import numpy as np
 from molecules.utils import one_hot_array, one_hot_index
+from functools import reduce
 
 from sklearn.model_selection import train_test_split
 
@@ -30,6 +31,7 @@ def chunk_iterator(dataset, chunk_size=1000):
     raise StopIteration
 
 def main():
+    
     args = get_arguments()
     data = pandas.read_hdf(args.infile, 'table')
     keys = data[args.smiles_column].map(len) < 121
@@ -40,7 +42,14 @@ def main():
         data = data[keys]
 
     structures = data[args.smiles_column].map(lambda x: list(x.ljust(120)))
-
+    # structures= [str(s) for s in structures]
+    # print('a' ,(structures[1]), 'b' , (structures) )
+    
+    # print(structures)
+    # print(type(structures))
+    # print(structures[0])
+    # print(type(structures[0]))
+    
     if args.property_column:
         properties = data[args.property_column][keys]
 
@@ -48,38 +57,93 @@ def main():
 
     train_idx, test_idx = map(np.array,
                               train_test_split(structures.index, test_size = 0.20))
+    
+    
 
     charset = list(reduce(lambda x, y: set(y) | x, structures, set()))
+    # print(charset)
+    # print(type(charset))
+
 
     one_hot_encoded_fn = lambda row: map(lambda x: one_hot_array(x, len(charset)),
                                                 one_hot_index(row, charset))
 
-    h5f = h5py.File(args.outfile, 'w')
-    h5f.create_dataset('charset', data = charset)
+    # h5f = h5py.File(args.outfile, 'w')
+    # h5f.create_dataset('charset', data = charset)
+    
 
-    def create_chunk_dataset(h5file, dataset_name, dataset, dataset_shape,
-                             chunk_size=1000, apply_fn=None):
-        new_data = h5file.create_dataset(dataset_name, dataset_shape,
-                                         chunks=tuple([chunk_size]+list(dataset_shape[1:])))
-        for (chunk_ixs, chunk) in chunk_iterator(dataset):
-            if not apply_fn:
-                new_data[chunk_ixs, ...] = chunk
-            else:
-                new_data[chunk_ixs, ...] = apply_fn(chunk)
+    chunk_indices = np.array_split(np.arange(len(train_idx)),
+                                    len(train_idx)/10000)
+    print(train_idx)
+    print(chunk_indices)
+    
+    for chunk_ixs in chunk_indices:
+        a = chunk_ixs
+        print(chunk_ixs)
+        print(train_idx[chunk_ixs])
+        print(structures[train_idx[chunk_ixs]])
+        # chunk = train_idx[chunk_ixs]
+        # yield (chunk_ixs, chunk)
+    
+    apply_fn=lambda ch: np.array(map(one_hot_encoded_fn,structures[ch]))
+    
+    h5f2 = h5py.File(args.outfile, 'w')
+    new_data1  = h5f2.create_dataset('test', (len(train_idx), 120, len(charset)),
+                                          chunks=tuple([1000]+list((len(train_idx), 120, len(charset))[1:])))
+    
+    print(structures.shape)
+    print(structures)
+    print(new_data1)
+    b = one_hot_index(structures[train_idx[a]], charset)
+    
+    one = one_hot_array(b,len(charset))
+    print(one)
+    # for (chunk_ixs, chunk) in chunk_iterator(train_idx):
+    #     print(new_data1[chunk_ixs].shape)
+    #     print(chunk.shape)
+    
+    
+    # print(chunk_ixs)
 
-    create_chunk_dataset(h5f, 'data_train', train_idx,
-                         (len(train_idx), 120, len(charset)),
-                         apply_fn=lambda ch: np.array(map(one_hot_encoded_fn,
-                                                          structures[ch])))
-    create_chunk_dataset(h5f, 'data_test', test_idx,
-                         (len(test_idx), 120, len(charset)),
-                         apply_fn=lambda ch: np.array(map(one_hot_encoded_fn,
-                                                          structures[ch])))
 
-    if args.property_column:
-        h5f.create_dataset('property_train', data = properties[train_idx])
-        h5f.create_dataset('property_test', data = properties[test_idx])
-    h5f.close()
+    # # print(charset[0].dtype)
+    # # print(type(charset[0]))
+    # # print(type(structures[0][0]))
+
+    # # newtype = np.dtype(('structures', 'S'))
+    # dataset_shape = (len(train_idx), 120, len(charset))
+    
+    # print(dataset_shape)
+    # print(dataset_shape[:-1])
+    # print(tuple([1000]+list(dataset_shape[1:])))
+   
+    # def create_chunk_dataset(h5file, dataset_name, dataset, dataset_shape,
+    #                          chunk_size=1000, apply_fn=None):
+    #     new_data = h5file.create_dataset(dataset_name, dataset_shape,
+    #                                      chunks=tuple([chunk_size]+list(dataset_shape[1:])))
+
+    #     for (chunk_ixs, chunk) in chunk_iterator(dataset):
+    #         if not apply_fn:
+    #             new_data[chunk_ixs, ...] = chunk
+    #         else:
+                
+    #             new_data[chunk_ixs, ...] = apply_fn(chunk)
+
+    # create_chunk_dataset(h5f, 'data_train', train_idx,
+    #                      (len(train_idx), 120, len(charset)),
+    #                      apply_fn=lambda ch: np.array(map(one_hot_encoded_fn,
+    #                                                       structures[ch])))
+    # create_chunk_dataset(h5f, 'data_test', test_idx,
+    #                      (len(test_idx), 120, len(charset)),
+    #                      apply_fn=lambda ch: np.array(map(one_hot_encoded_fn,
+    #                                                       structures[ch])))
+
+
+
+    # if args.property_column:
+    #     h5f.create_dataset('property_train', data = properties[train_idx])
+    #     h5f.create_dataset('property_test', data = properties[test_idx])
+    #     h5f.close()
 
 if __name__ == '__main__':
     main()
